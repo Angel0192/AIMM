@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-AIMM Robot - ROS2 Implementation with SMACC2 State Machine
-Converts your existing SMACH implementation to SMACC2
+AIMM Robot - ROS2 Implementation with YASMIN State Machine
+Converts your existing SMACH implementation to YASMIN
 """
 
 import rclpy
@@ -12,8 +12,11 @@ from sensor_msgs.msg import Image
 import threading
 import time
 
-# SMACC2 imports
-from smacc2_py import *
+# YASMIN imports
+import yasmin
+from yasmin import State
+from yasmin import StateMachine
+from yasmin_viewer import YasminViewerPub
 
 # ============================================================================
 # ROS2 ENHANCED MISSION FUNCTIONS
@@ -192,329 +195,241 @@ class RosMissionFunctions:
         self.node.status_pub.publish(msg)
 
 # ============================================================================
-# SMACC2 CLIENT BEHAVIORS
+# BEHAVIOR TREE NODES (keeping your original structure)
 # ============================================================================
 
-class NavigationClient(SmaccClient):
-    """Client for navigation operations"""
-    def __init__(self):
-        super().__init__()
-        
-    def initialize(self):
-        pass
+class Node:
+    def run(self): 
+        raise NotImplementedError
 
-class MissionExecutionClient(SmaccClient):
-    """Client for mission execution"""
-    def __init__(self):
-        super().__init__()
+class Selector(Node):
+    def __init__(self, children): 
+        self.children = children
         
-    def initialize(self):
-        pass
+    def run(self):
+        for c in self.children:
+            if c.run(): 
+                return True
+        return False
 
-# ============================================================================
-# SMACC2 CLIENT BEHAVIORS
-# ============================================================================
-
-class CalibrateAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
+class Sequence(Node):
+    def __init__(self, children): 
+        self.children = children
         
-    def onEntry(self):
-        self.getStateMachine().getGlobalData().missions.calibrate()
-        self.postSuccessEvent()
+    def run(self):
+        for c in self.children:
+            if not c.run(): 
+                return False
+        return True
 
-class TraverseAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
+class Action(Node):
+    def __init__(self, fn): 
+        self.fn = fn
         
-    def onEntry(self):
-        self.getStateMachine().getGlobalData().missions.traverse()
-        self.postSuccessEvent()
-
-class MissionOneAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionOne()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionTwoAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionTwo()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionThreeAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionThree()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionFourAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionFour()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionFiveAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionFive()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionSixAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionSix()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionSevenAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionSeven()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionEightAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionEight()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class MissionNineAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        success = self.getStateMachine().getGlobalData().missions.missionNine()
-        if success:
-            self.postSuccessEvent()
-        else:
-            self.postFailureEvent()
-
-class WaitAction(SmaccClientBehavior):
-    def __init__(self):
-        super().__init__()
-        
-    def onEntry(self):
-        self.getStateMachine().getGlobalData().missions.wait()
-        self.postSuccessEvent()
+    def run(self): 
+        return self.fn()
 
 # ============================================================================
-# SMACC2 STATES
+# YASMIN STATES
 # ============================================================================
 
-class StCalibration(SmaccState):
-    def __init__(self):
-        super().__init__()
+class CalibrationState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.calibrate), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(CalibrateAction), StMissionOne)
-        self.addTransition(EvCbFailure(CalibrateAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(CalibrateAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            if success:
+                return "succeeded"
+            else:
+                return "failed"
+        except Exception as e:
+            print(f"Calibration failed: {e}")
+            return "failed"
 
-class StMissionOne(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionOneState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionOne), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionOneAction), StMissionTwo)
-        self.addTransition(EvCbFailure(MissionOneAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionOneAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission One failed: {e}")
+            return "failed"
 
-class StMissionTwo(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionTwoState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionTwo), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionTwoAction), StMissionThree)
-        self.addTransition(EvCbFailure(MissionTwoAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionTwoAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Two failed: {e}")
+            return "failed"
 
-class StMissionThree(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionThreeState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionThree), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionThreeAction), StMissionFour)
-        self.addTransition(EvCbFailure(MissionThreeAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionThreeAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Three failed: {e}")
+            return "failed"
 
-class StMissionFour(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionFourState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionFour), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionFourAction), StMissionFive)
-        self.addTransition(EvCbFailure(MissionFourAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionFourAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Four failed: {e}")
+            return "failed"
 
-class StMissionFive(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionFiveState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionFive), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionFiveAction), StMissionSix)
-        self.addTransition(EvCbFailure(MissionFiveAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionFiveAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Five failed: {e}")
+            return "failed"
 
-class StMissionSix(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionSixState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionSix), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionSixAction), StMissionSeven)
-        self.addTransition(EvCbFailure(MissionSixAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionSixAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Six failed: {e}")
+            return "failed"
 
-class StMissionSeven(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionSevenState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionSeven), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionSevenAction), StMissionEight)
-        self.addTransition(EvCbFailure(MissionSevenAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionSevenAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Seven failed: {e}")
+            return "failed"
 
-class StMissionEight(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionEightState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionEight), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionEightAction), StMissionNine)
-        self.addTransition(EvCbFailure(MissionEightAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionEightAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Eight failed: {e}")
+            return "failed"
 
-class StMissionNine(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionNineState(State):
+    def __init__(self, missions):
+        super().__init__(["succeeded", "failed"])
+        self.missions = missions
+        self.behavior_tree = Sequence([
+            Action(self.missions.missionNine), 
+            Action(self.missions.wait)
+        ])
         
-    def configure(self):
-        self.addTransition(EvCbSuccess(MissionNineAction), StMissionComplete)
-        self.addTransition(EvCbFailure(MissionNineAction), StFailSafe)
-        
-    def onEntry(self):
-        self.requiresClient(MissionExecutionClient)
-        self.requiresComponent(MissionNineAction)
+    def execute(self, blackboard):
+        try:
+            success = self.behavior_tree.run()
+            return "succeeded" if success else "failed"
+        except Exception as e:
+            print(f"Mission Nine failed: {e}")
+            return "failed"
 
-class StMissionComplete(SmaccState):
-    def __init__(self):
-        super().__init__()
+class FailSafeState(State):
+    def __init__(self, missions):
+        super().__init__(["aborted"])
+        self.missions = missions
         
-    def configure(self):
-        pass
-        
-    def onEntry(self):
-        self.getLogger().info("All missions completed successfully!")
+    def execute(self, blackboard):
+        self.missions.failSafe()
+        return "aborted"
 
-class StFailSafe(SmaccState):
-    def __init__(self):
-        super().__init__()
+class MissionCompleteState(State):
+    def __init__(self, missions):
+        super().__init__(["finished"])
+        self.missions = missions
         
-    def configure(self):
-        pass
-        
-    def onEntry(self):
-        self.getStateMachine().getGlobalData().missions.failSafe()
-        self.getLogger().error("Mission failed - failsafe activated")
+    def execute(self, blackboard):
+        self.missions.node.get_logger().info("🎉 All missions completed successfully!")
+        return "finished"
 
 # ============================================================================
-# MAIN SMACC2 STATE MACHINE
-# ============================================================================
-
-class AimmStateMachine(SmaccStateMachineBase):
-    def __init__(self):
-        super().__init__()
-        
-    def configure(self):
-        # Add global data
-        self.setGlobalData("missions", None)
-        
-        # Configure state machine with initial state
-        self.addState(StCalibration, initial_state=True)
-        self.addState(StMissionOne)
-        self.addState(StMissionTwo)
-        self.addState(StMissionThree)
-        self.addState(StMissionFour)
-        self.addState(StMissionFive)
-        self.addState(StMissionSix)
-        self.addState(StMissionSeven)
-        self.addState(StMissionEight)
-        self.addState(StMissionNine)
-        self.addState(StMissionComplete)
-        self.addState(StFailSafe)
-
-# ============================================================================
-# MAIN ROS2 NODE
+# MAIN ROS2 NODE WITH YASMIN
 # ============================================================================
 
 class AimmRobotNode(Node):
-    """Main ROS2 node that runs the AIMM robot with SMACC2"""
+    """Main ROS2 node that runs the AIMM robot with YASMIN"""
     
     def __init__(self):
         super().__init__('aimm_robot')
@@ -536,30 +451,158 @@ class AimmRobotNode(Node):
         self.buoy_detected = False
         self.obstacle_detected = False
         
-        # Create and start SMACC2 state machine
-        self.sm = AimmStateMachine()
-        self.sm.setGlobalData("missions", self.missions)
+        # Create YASMIN state machine
+        self.setup_state_machine()
         
-        # Start state machine in separate thread
-        self.sm_thread = threading.Thread(target=self.run_state_machine)
-        self.sm_thread.daemon = True
-        self.sm_thread.start()
+        # Set up YASMIN viewer for visualization
+        self.yasmin_pub = YasminViewerPub(self, "AIMM_YASMIN", self.sm)
+        
+        # Start mission execution
+        self.mission_thread = threading.Thread(target=self.run_missions)
+        self.mission_thread.daemon = True
+        self.mission_thread.start()
 
-    def run_state_machine(self):
-        """Execute the SMACC2 state machine"""
-        self.get_logger().info("Starting AIMM Mission Sequence with SMACC2...")
-        self.sm.execute()
+    def setup_state_machine(self):
+        """Create YASMIN state machine"""
+        self.sm = StateMachine(outcomes=["mission_complete", "mission_failed"])
+        
+        # Create blackboard for shared data
+        blackboard = yasmin.Blackboard()
+        
+        # Add states to the state machine
+        self.sm.add_state(
+            "CALIBRATION",
+            CalibrationState(self.missions),
+            transitions={
+                "succeeded": "MISSION_1",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_1",
+            MissionOneState(self.missions),
+            transitions={
+                "succeeded": "MISSION_2",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_2",
+            MissionTwoState(self.missions),
+            transitions={
+                "succeeded": "MISSION_3",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_3",
+            MissionThreeState(self.missions),
+            transitions={
+                "succeeded": "MISSION_4",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_4",
+            MissionFourState(self.missions),
+            transitions={
+                "succeeded": "MISSION_5",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_5",
+            MissionFiveState(self.missions),
+            transitions={
+                "succeeded": "MISSION_6",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_6",
+            MissionSixState(self.missions),
+            transitions={
+                "succeeded": "MISSION_7",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_7",
+            MissionSevenState(self.missions),
+            transitions={
+                "succeeded": "MISSION_8",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_8",
+            MissionEightState(self.missions),
+            transitions={
+                "succeeded": "MISSION_9",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_9",
+            MissionNineState(self.missions),
+            transitions={
+                "succeeded": "MISSION_COMPLETE",
+                "failed": "FAILSAFE"
+            }
+        )
+        
+        self.sm.add_state(
+            "MISSION_COMPLETE",
+            MissionCompleteState(self.missions),
+            transitions={
+                "finished": "mission_complete"
+            }
+        )
+        
+        self.sm.add_state(
+            "FAILSAFE",
+            FailSafeState(self.missions),
+            transitions={
+                "aborted": "mission_failed"
+            }
+        )
+        
+        # Set initial state
+        self.sm.set_start_state("CALIBRATION")
+
+    def run_missions(self):
+        """Execute the YASMIN state machine"""
+        self.get_logger().info("🚀 Starting AIMM Mission Sequence with YASMIN...")
+        
+        # Create blackboard for shared data
+        blackboard = yasmin.Blackboard()
+        
+        # Execute state machine
+        try:
+            outcome = self.sm.execute(blackboard)
+            self.get_logger().info(f"✅ Mission sequence completed with outcome: {outcome}")
+        except Exception as e:
+            self.get_logger().error(f"❌ Mission execution failed: {e}")
 
     # ROS2 Callbacks
     def buoy_callback(self, msg):
         self.buoy_detected = msg.data
         if msg.data:
-            self.get_logger().info("Buoy detection signal received")
+            self.get_logger().info("🔍 Buoy detection signal received")
 
     def obstacle_callback(self, msg):
         self.obstacle_detected = msg.data
         if msg.data:
-            self.get_logger().info("Obstacle detection signal received")
+            self.get_logger().info("⚠️ Obstacle detection signal received")
 
 def main(args=None):
     rclpy.init(args=args)
