@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>autonomy_boat</name>
+  <version>0.0.0</version>
+  <description>The autonomy_boat package</description>
+
+  <!-- One maintainer tag required, multiple allowed, one person per tag -->
+  <maintainer email="ppninja@todo.todo">ppninja</maintainer>
+
+  <!-- One license tag required, multiple allowed, one license per tag -->
+  <license>TODO</license>
+
+  <!-- Build tool dependencies -->
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- Build dependencies -->
+  <depend>rclcpp</depend>
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>visualization_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher</depend>
+  <depend>urdf</depend>
+  <depend>xacro</depend>
+  
+  <!-- ROS2 Navigation stack dependencies -->
+  <depend>nav2_common</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav2_msgs</depend>
+  <depend>nav2_util</depend>
+  
+  <!-- Action dependencies -->
+  <depend>action_msgs</depend>
+  <depend>rclcpp_action</depend>
+  
+  <!-- Message generation -->
+  <depend>rosidl_default_generators</depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <!-- Testing dependencies -->
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <!-- Export tag -->
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
