@@ -1,43 +1,56 @@
-#include <Servo.h>
+#include <micro_ros_arduino.h>
+#include <rcl/rcl.h>
+#include <rclc/rclc.h>
+#include <rclc/executor.h>
+#include <geometry_msgs/msg/twist.h>
+#include <ESP32Servo.h>
 
 Servo leftMotor, rightMotor;
 
-const int PWM_MIN = 1100;
-const int PWM_MAX = 1900;
+int leftMotor_Pin = 10;
+int rightMotor_Pin = 9;
+
+rcl_subscription_t subscriber;
+geometry_msgs__msg__Twist msg;
+
+rclc_executor_t executor;
+rcl_allocator_t allocator;
+rclc_support_t support;
+rcl_node_t node;
+
+void subscription_callback(const void * msgin) {
+  const geometry_msgs__msg__Twist * msg = (const geometry_msgs__msg__Twist *)msgin;
+  float linear = msg->linear.x;
+  float angular = msg->angular.z;
+
+  int left_speed = (linear - angular) * 90 + 90;
+  int right_speed = (linear + angular) * 90 + 90;
+
+  leftMotor.write(left_speed);
+  rightMotor.write(right_speed);
+}
 
 void setup() {
-  Serial.begin(9600);
-  leftMotor.attach(9);  // Pin 9 connected to RC Input 1
-  rightMotor.attach(10); // Pin 10 connected to RC Input 2
-  while(!Serial);
-  Serial.println("Arduino Ready");
+  set_microros_transports(); // Serial transport
+
+  leftMotor.attach(rightMotor_Pin);
+  rightMotor.attach(leftMotor_Pin);
+
+  allocator = rcl_get_default_allocator();
+  rclc_support_init(&support, 0, NULL, &allocator);
+  rclc_node_init_default(&node, "esp32_node", "", &support);
+
+  rclc_subscription_init_default(
+    &subscriber,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+    "cmd_vel"
+  );
+
+  rclc_executor_init(&executor, &support.context, 1, &allocator);
+  rclc_executor_add_subscription(&executor, &subscriber, &msg, &subscription_callback, ON_NEW_DATA);
 }
 
 void loop() {
-  if (Serial.available() > 0) {
-    String command = Serial.readStringUntil('\n');
-    command.trim();
-
-    if (command.startsWith("Forward")){
-      Serial.println("Starting Forward Command...");
-      leftMotor.writeMicroseconds(2000);
-      rightMotor.writeMicroseconds(2000);
-      delay(1000);
-      Serial.println("Forward Command Ended...");
-    }else if (command.startsWith("Backward")){
-      Serial.println("Starting Backward Command...");
-      leftMotor.writeMicroseconds(1000);
-      rightMotor.writeMicroseconds(1000);
-      delay(1000);
-      Serial.println("Backward Command Ended...");
-    }else if (command.startsWith("Neutral")){
-      Serial.println("Starting Neutral Command...");
-      leftMotor.writeMicroseconds(1500);
-      rightMotor.writeMicroseconds(1500);
-      delay(1000);
-      Serial.println("Neutral Command Ended...");
-    }else{
-      Serial.println("Unknown Command");
-    }
-  }
+  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
 }
