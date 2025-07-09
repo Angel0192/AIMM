@@ -1,35 +1,48 @@
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+import serial
+import time
 
-class CmdVelPublisher(Node):
-
+class MotorCommandNode(Node):
     def __init__(self):
-        super().__init__('cmd_vel_publisher')
-        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
-        timer_period = 0.5  # seconds
-        self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.get_logger().info('cmd_vel publisher node started!')
+        super().__init__('motor_command_node')
+        self.serial_port = serial.Serial('/dev/ttyUSB0', 115200, timeout=1)
+        time.sleep(2)  # wait for serial to boot
+        self.subscription = self.create_subscription(
+            Twist,
+            'cmd_vel',
+            self.cmd_vel_callback,
+            10
+        )
+        self.get_logger().info("Connected to ESP32")
 
-    def timer_callback(self):
-        msg = Twist()
+    def cmd_vel_callback(self, msg):
+        linear = msg.linear.x
+        angular = msg.angular.z
 
-        # Customize these values for linear and angular movement
-        msg.linear.x = 0.5   # forward speed
-        msg.angular.z = 0.0  # no rotation
+        if abs(linear) < 0.05 and abs(angular) < 0.05:
+            self.send_command("Neutral")
+        elif linear > 0:
+            self.send_command("Forward")
+        elif linear < 0:
+            self.send_command("Backward")
 
-        self.publisher_.publish(msg)
-        self.get_logger().info(f'Publishing: linear.x={msg.linear.x}, angular.z={msg.angular.z}')
-
+    def send_command(self, cmd):
+        self.serial_port.write((cmd + '\n').encode())
+        self.get_logger().info(f"Sent: {cmd}")
 
 def main(args=None):
     rclpy.init(args=args)
-    node = CmdVelPublisher()
-    rclpy.spin(node)
-
-    node.destroy_node()
-    rclpy.shutdown()
-
+    node = MotorCommandNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.serial_port.close()
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
